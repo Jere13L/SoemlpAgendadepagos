@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOEMLP · FESIMUBO — Agenda de Pagos y Recordatorios</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <!-- PDF.js para lectura profunda de PDFs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
+  <!-- Tesseract.js para OCR en imágenes (remitos, cupones, capturas) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">SF</div>
+        <div>
+          <div class="brand-title">SOEMLP</div>
+          <div class="brand-sub">FESIMUBO · Gestión</div>
+        </div>
+      </div>
+
+      <div class="month-picker-box">
+        <label for="global-month" class="month-label">Período activo</label>
+        <div class="month-controls">
+          <button type="button" class="icon-btn" id="prev-month-btn" title="Mes anterior" aria-label="Mes anterior">◀</button>
+          <input type="month" id="global-month" class="month-input" />
+          <button type="button" class="icon-btn" id="next-month-btn" title="Mes siguiente" aria-label="Mes siguiente">▶</button>
+        </div>
+      </div>
+
+      <nav class="nav-menu" aria-label="Navegación principal">
+        <button type="button" class="nav-item active" data-view="dashboard">
+          <span class="nav-icon">📊</span>
+          <span>Resumen del Mes</span>
+        </button>
+        <button type="button" class="nav-item" data-view="pagos">
+          <span class="nav-icon">💳</span>
+          <span>Agenda de Pagos</span>
+          <span class="nav-badge" id="badge-pagos-pendientes">0</span>
+        </button>
+        <button type="button" class="nav-item" data-view="recordatorios">
+          <span class="nav-icon">📋</span>
+          <span>Recordatorios</span>
+          <span class="nav-badge" id="badge-tareas-pendientes">0</span>
+        </button>
+        <button type="button" class="nav-item" data-view="respaldo">
+          <span class="nav-icon">💾</span>
+          <span>Historial y Respaldo</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button type="button" class="btn btn-primary btn-block" id="btn-quick-upload">
+          <span>📄</span> Cargar Factura / Remito
+        </button>
+        <p class="storage-note">Datos guardados localmente en este equipo (IndexedDB).</p>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <h1 id="view-title" class="page-title">Resumen del Mes</h1>
+          <p id="view-subtitle" class="page-subtitle">Control integral de vencimientos, facturas y gestiones mensuales.</p>
+        </div>
+        <div class="topbar-actions">
+          <div class="search-wrap">
+            <input type="search" id="global-search" class="search-input" placeholder="Buscar NIS, remito, monto, tarea..." />
+          </div>
+        </div>
+      </header>
+
+      <!-- VIEW: DASHBOARD -->
+      <section id="view-dashboard" class="view active">
+        <div class="kpi-grid" id="dashboard-kpis"></div>
+
+        <div class="dashboard-columns">
+          <div class="card">
+            <div class="card-header">
+              <h2>⚡ Próximos Vencimientos y Pagos</h2>
+              <button type="button" class="btn btn-ghost btn-sm" data-goto="pagos">Ver agenda completa →</button>
+            </div>
+            <div id="dashboard-pagos-list" class="compact-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>📌 Recordatorios del Período</h2>
+              <button type="button" class="btn btn-ghost btn-sm" data-goto="recordatorios">Gestionar tareas →</button>
+            </div>
+            <div id="dashboard-tareas-list" class="compact-list"></div>
+          </div>
+        </div>
+
+        <div class="card mt-lg">
+          <div class="card-header">
+            <h2>🔍 Lector Inteligente de Comprobantes</h2>
+            <span class="pill pill-info">PDF · Imágenes · Texto</span>
+          </div>
+          <div class="dropzone-mini" id="dashboard-dropzone">
+            <input type="file" id="dashboard-file-input" accept=".pdf,image/*,.txt,.csv,.eml" hidden />
+            <div class="dropzone-content">
+              <div class="dropzone-icon">📥</div>
+              <div>
+                <strong>Arrastrá una factura, cupón o remito aquí</strong> o <button type="button" class="link-btn" id="dashboard-browse-btn">seleccionalo desde tu PC</button>
+                <p class="muted">Detecta automáticamente 1° y 2° vencimiento, importes, NIS, N° de póliza, remito, período, CUIT, CAE y alertas.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: AGENDA DE PAGOS -->
+      <section id="view-pagos" class="view">
+        <div class="toolbar">
+          <div class="filter-chips" id="pagos-category-filters">
+            <button type="button" class="chip active" data-cat="all">Todos</button>
+            <button type="button" class="chip" data-cat="Seguro">🛡️ Seguro</button>
+            <button type="button" class="chip" data-cat="Agua">💧 Agua</button>
+            <button type="button" class="chip" data-cat="Alquiler">🏢 Alquiler</button>
+            <button type="button" class="chip" data-cat="Luz">⚡ Luz (NIS)</button>
+            <button type="button" class="chip" data-cat="Telecentro">🌐 Telecentro</button>
+            <button type="button" class="chip" data-cat="Otro">📁 Otros</button>
+          </div>
+          <div class="toolbar-right">
+            <select id="pagos-status-filter" class="select-input">
+              <option value="all">Todos los estados</option>
+              <option value="pendiente">Pendientes</option>
+              <option value="vencido">Vencidos</option>
+              <option value="pagado">Pagados / Enviados</option>
+            </select>
+            <button type="button" class="btn btn-primary" id="btn-new-pago">+ Nuevo Registro / Subir Archivo</button>
+          </div>
+        </div>
+
+        <div class="services-overview-grid" id="services-overview-grid"></div>
+
+        <div class="card mt-lg">
+          <div class="card-header">
+            <h2>Comprobantes y Pagos del Período</h2>
+            <span id="pagos-count-label" class="muted"></span>
+          </div>
+          <div id="pagos-table-container" class="table-responsive"></div>
+        </div>
+      </section>
+
+      <!-- VIEW: RECORDATORIOS MENSUALES -->
+      <section id="view-recordatorios" class="view">
+        <div class="toolbar">
+          <div class="progress-summary" id="tareas-progress-box">
+            <div class="progress-text">
+              <strong id="tareas-progress-label">0 de 0 completadas</strong>
+              <span class="muted" id="tareas-progress-pct">0%</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="tareas-progress-fill" style="width: 0%"></div>
+            </div>
+          </div>
+          <div class="toolbar-right">
+            <select id="tareas-status-filter" class="select-input">
+              <option value="all">Todas las tareas</option>
+              <option value="pendiente">Solo pendientes</option>
+              <option value="en_proceso">En proceso</option>
+              <option value="hecho">Completadas / Enviadas</option>
+            </select>
+            <button type="button" class="btn btn-primary" id="btn-new-tarea">+ Nuevo Recordatorio</button>
+          </div>
+        </div>
+
+        <div id="tareas-list-container" class="tasks-grid"></div>
+      </section>
+
+      <!-- VIEW: HISTORIAL Y RESPALDO -->
+      <section id="view-respaldo" class="view">
+        <div class="dashboard-columns">
+          <div class="card">
+            <div class="card-header">
+              <h2>💾 Copia de Seguridad (Exportar / Importar)</h2>
+            </div>
+            <p class="muted mb-md">
+              Toda la agenda, recordatorios y archivos adjuntos se guardan en este navegador. Te recomendamos descargar un respaldo periódicamente o si cambiás de computadora.
+            </p>
+            <div class="btn-group">
+              <button type="button" class="btn btn-primary" id="btn-export-backup">⬇️ Descargar Respaldo (.json)</button>
+              <button type="button" class="btn btn-secondary" id="btn-import-backup">⬆️ Restaurar Respaldo</button>
+              <input type="file" id="import-backup-input" accept=".json" hidden />
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>📅 Resumen Anual de Cumplimiento</h2>
+            </div>
+            <div id="annual-summary-container"></div>
+          </div>
+        </div>
+
+        <div class="card mt-lg">
+          <div class="card-header">
+            <h2>📜 Registro de Actividad Reciente</h2>
+          </div>
+          <div id="activity-log-container" class="compact-list"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL: SUBIR Y ANALIZAR FACTURA / REMITO / PAGO -->
+  <div class="modal-backdrop" id="modal-pago" aria-hidden="true">
+    <div class="modal modal-xl">
+      <div class="modal-header">
+        <h2 id="modal-pago-title">Cargar y Leer Comprobante</h2>
+        <button type="button" class="icon-btn close-modal" data-close="modal-pago" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modal-body modal-split">
+        <!-- Columna izquierda: Carga y vista previa + Texto extraído -->
+        <div class="modal-col-left">
+          <div class="dropzone" id="pago-dropzone">
+            <input type="file" id="pago-file-input" accept=".pdf,image/*,.txt,.csv,.eml" hidden />
+            <div class="dropzone-icon">📄</div>
+            <div>
+              <strong>Subí la factura, cupón, liquidación o remito</strong>
+              <p class="muted">PDF, imagen (JPG/PNG) o archivo de texto. También podés arrastrarlo aquí.</p>
+              <button type="button" class="btn btn-secondary btn-sm mt-xs" id="pago-browse-btn">Elegir archivo</button>
+            </div>
+          </div>
+
+          <div id="ocr-status-bar" class="ocr-status hidden">
+            <span class="spinner"></span>
+            <span id="ocr-status-text">Leyendo documento atentamente...</span>
+          </div>
+
+          <div id="extraction-alerts" class="alerts-box hidden"></div>
+
+          <div id="file-preview-box" class="preview-box hidden">
+            <div class="preview-header">
+              <span id="preview-filename" class="preview-filename"></span>
+              <button type="button" class="btn btn-ghost btn-xs" id="btn-toggle-raw-text">Ver texto completo extraído</button>
+            </div>
+            <div id="preview-media" class="preview-media"></div>
+            <div id="raw-text-panel" class="raw-text-panel hidden">
+              <label class="field-label">Texto leído del documento (verificá que no falte ningún dato):</label>
+              <textarea id="raw-extracted-text" class="textarea-raw" rows="8" placeholder="Texto extraído o pegado del correo..."></textarea>
+              <button type="button" class="btn btn-secondary btn-xs mt-xs" id="btn-reparse-text">🔄 Re-analizar este texto</button>
+            </div>
+          </div>
+
+          <div class="paste-text-fallback mt-sm">
+            <button type="button" class="link-btn" id="btn-open-paste-text">¿Te llegó por correo sin PDF? Pegar texto del mail para analizarlo</button>
+          </div>
+        </div>
+
+        <!-- Columna derecha: Formulario con datos extraídos -->
+        <form id="form-pago" class="modal-col-right">
+          <input type="hidden" id="pago-id" />
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="pago-categoria">Servicio / Categoría *</label>
+              <select id="pago-categoria" class="input" required>
+                <option value="Seguro">🛡️ Seguro (Cupón de pago)</option>
+                <option value="Agua">💧 Agua (Remito / Factura)</option>
+                <option value="Alquiler">🏢 Alquiler (Liquidación)</option>
+                <option value="Luz">⚡ Luz (Factura por NIS)</option>
+                <option value="Telecentro">🌐 Telecentro (Factura mensual)</option>
+                <option value="Otro">📁 Otro servicio</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="pago-frecuencia">Frecuencia</label>
+              <select id="pago-frecuencia" class="input">
+                <option value="Mensual">Mensual</option>
+                <option value="Semanal">Semanal (ej. Remito Agua)</option>
+                <option value="Bimestral">Bimestral</option>
+                <option value="Único">Único / Eventual</option>
+              </select>
+            </div>
+
+            <div class="form-group col-span-2">
+              <label for="pago-titulo">Concepto / Descripción *</label>
+              <input type="text" id="pago-titulo" class="input" placeholder="Ej: Luz Sede Central - NIS 1234567" required />
+            </div>
+
+            <div class="form-group">
+              <label for="pago-periodo">Período facturado</label>
+              <input type="month" id="pago-periodo" class="input" required />
+            </div>
+
+            <div class="form-group">
+              <label for="pago-identificador">NIS / N° Cliente / Póliza / Remito</label>
+              <input type="text" id="pago-identificador" class="input" placeholder="Ej: NIS 4029182 / Remito 00412" />
+            </div>
+
+            <div class="form-group">
+              <label for="pago-vencimiento1">1° Vencimiento</label>
+              <input type="date" id="pago-vencimiento1" class="input" />
+            </div>
+
+            <div class="form-group">
+              <label for="pago-monto1">Importe 1° Vto ($)</label>
+              <input type="number" step="0.01" id="pago-monto1" class="input" placeholder="0.00" />
+            </div>
+
+            <div class="form-group">
+              <label for="pago-vencimiento2">2° Vencimiento (si aplica)</label>
+              <input type="date" id="pago-vencimiento2" class="input" />
+            </div>
+
+            <div class="form-group">
+              <label for="pago-monto2">Importe 2° Vto ($)</label>
+              <input type="number" step="0.01" id="pago-monto2" class="input" placeholder="0.00" />
+            </div>
+
+            <div class="form-group">
+              <label for="pago-estado">Estado actual</label>
+              <select id="pago-estado" class="input">
+                <option value="pendiente">⏳ Pendiente de pago</option>
+                <option value="pagado">✅ Pagado / Enviado</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="pago-fecha-pago">Fecha de pago / envío</label>
+              <input type="date" id="pago-fecha-pago" class="input" />
+            </div>
+
+            <div class="form-group col-span-2">
+              <label for="pago-datos-extra">Datos clave detectados (CBU, Código de pago, CAE, CUIT, Cantidad)</label>
+              <textarea id="pago-datos-extra" class="input" rows="2" placeholder="Se completa automáticamente al leer el archivo..."></textarea>
+            </div>
+
+            <div class="form-group col-span-2">
+              <label for="pago-notas">Observaciones internas</label>
+              <textarea id="pago-notas" class="input" rows="2" placeholder="Notas, reclamos, quién autorizó o dónde se envió..."></textarea>
+            </div>
+
+            <div class="form-group col-span-2">
+              <label for="pago-comprobante-input">Adjuntar comprobante de pago (opcional, una vez abonado)</label>
+              <div class="inline-file-row">
+                <input type="file" id="pago-comprobante-input" accept=".pdf,image/*" class="input-file-sm" />
+                <span id="pago-comprobante-name" class="muted"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-ghost close-modal" data-close="modal-pago">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Guardar en Agenda</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVO / EDITAR RECORDATORIO MENSUAL -->
+  <div class="modal-backdrop" id="modal-tarea" aria-hidden="true">
+    <div class="modal modal-md">
+      <div class="modal-header">
+        <h2 id="modal-tarea-title">Recordatorio Mensual</h2>
+        <button type="button" class="icon-btn close-modal" data-close="modal-tarea" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="form-tarea" class="modal-body">
+        <input type="hidden" id="tarea-id" />
+        <div class="form-grid">
+          <div class="form-group col-span-2">
+            <label for="tarea-titulo">Título del recordatorio *</label>
+            <input type="text" id="tarea-titulo" class="input" placeholder="Ej: Enviar RAFAM (Planilla de afiliados)" required />
+          </div>
+          <div class="form-group col-span-2">
+            <label for="tarea-descripcion">Detalle / Qué hay que hacer</label>
+            <textarea id="tarea-descripcion" class="input" rows="3" placeholder="Pasos, destinatarios, formato de entrega..."></textarea>
+          </div>
+          <div class="form-group">
+            <label for="tarea-dia-limite">Día límite sugerido del mes</label>
+            <input type="number" id="tarea-dia-limite" class="input" min="1" max="31" value="10" />
+          </div>
+          <div class="form-group">
+            <label for="tarea-canal">Canal / Modo de entrega</label>
+            <select id="tarea-canal" class="input">
+              <option value="Correo / Sistema">Correo / Sistema</option>
+              <option value="Impreso y entregar">Impreso y entregar</option>
+              <option value="Personal / RRHH">Enviar a Personal</option>
+              <option value="WhatsApp / Listado">WhatsApp / Listado</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="tarea-prioridad">Prioridad</label>
+            <select id="tarea-prioridad" class="input">
+              <option value="alta">🔴 Alta</option>
+              <option value="media" selected>🟡 Media</option>
+              <option value="baja">🟢 Baja</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="tarea-recurrente">Repetición</label>
+            <select id="tarea-recurrente" class="input">
+              <option value="true">Todos los meses</option>
+              <option value="false">Solo este mes</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost close-modal" data-close="modal-tarea">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar Recordatorio</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: VER DETALLE / ARCHIVO ADJUNTO -->
+  <div class="modal-backdrop" id="modal-viewer" aria-hidden="true">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h2 id="viewer-title">Detalle del Comprobante</h2>
+        <button type="button" class="icon-btn close-modal" data-close="modal-viewer" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modal-body" id="viewer-body"></div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script src="js/db.js"></script>
+  <script src="js/parser.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
